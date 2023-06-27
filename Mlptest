@@ -1,0 +1,139 @@
+import torchvision
+from torchvision import datasets,transforms
+import torch
+import numpy as np
+import pandas as pd
+import torch.nn.functional as F
+from sklearn.model_selection import train_test_split
+from torch.utils.data import TensorDataset,DataLoader
+from torch import nn
+import matplotlib.pyplot as plt
+from gpu_mem_track import MemTracker
+import time
+
+
+transformation=transforms.Compose(
+    [transforms.ToTensor()]
+)
+train_ds=datasets.MNIST('data/',train=True,transform=transformation,download=True)
+
+test_ds=datasets.MNIST('data/',train=False,transform=transformation,download=True)
+
+train_loader=DataLoader(train_ds,batch_size=64,shuffle=True)
+test_loader=DataLoader(test_ds,batch_size=256,shuffle=False)
+
+# imgs,label=next(iter(train_loader))
+# print(imgs.shape)
+# img=imgs[0]
+# # print(img.shape)
+# img=img.numpy()
+# img=np.squeeze(img,axis=0)
+# # print(img.shape)
+# plt.imshow(img)
+# plt.show()
+# # print(label[0])
+# def imgshow(img):
+#     npimg=img.numpy()
+#     npimg=np.squeeze(npimg)
+#     plt.imshow(npimg)
+#     plt.show()
+# plt.figure(figsize=(10,1))
+#
+# for i, img in enumerate(imgs[:10]):
+#     plt.subplot(1,10,i+1)
+#     imgshow(img)
+class MODEL(nn.Module):
+    def __init__(self):
+        super(MODEL, self).__init__()
+        self.liner_1=nn.Linear(784,1024)
+        self.liner_2=nn.Linear(1024,2048)
+        self.liner_3=nn.Linear(2048,1024)
+        self.liner_4=nn.Linear(1024,64)
+        self.liner_5=nn.Linear(64,10)
+
+    def forward(self,input):
+        x=input.view(-1,28*28)
+        x=F.relu(self.liner_1(x))
+        x=F.relu(self.liner_2(x))
+        x=F.relu(self.liner_3(x))
+        x=F.relu(self.liner_4(x))
+        x=self.liner_5(x)
+
+        return x
+
+# def get_model():
+#     lr=0.001
+#     model=MODEL()
+#     loss_fn=nn.CrossEntropyLoss()
+#     opt=torch.optim.Adam(model.parameters(),lr=lr)
+#
+#     return model,loss_fn,opt
+lr=0.001
+device = torch.device('cuda:0'if torch.cuda.is_available() else 'cpu')
+model=MODEL().to(device)
+loss_fn=nn.CrossEntropyLoss()
+opt=torch.optim.Adam(model.parameters(),lr=lr)
+def fit(epoch,model,train_ld,test_ld):
+    train_correct=0
+    train_total=0
+    train_loss=0
+    for x,y in train_ld:
+        x,y = x.to(device),y.to(device)
+        y_pred=model(x)
+        loss=loss_fn(y_pred,y)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+        with torch.no_grad():
+            y_pred=torch.argmax(y_pred,dim=1)
+            train_correct+=(y_pred.cpu().numpy()==y.cpu().numpy()).sum().item()
+            train_total+=y.size(0)
+            train_loss+=loss.data.item()
+
+    epoch_train_correct=train_correct /train_total
+    epoch_train_loss=train_loss / len(train_ld.dataset)
+
+    test_correct=0
+    test_total=0
+    test_loss=0
+    with torch.no_grad():
+        for x,y in test_ld:
+            x,y=x.to(device),y.to(device)
+            y_pred=model(x)
+            loss=loss_fn(y_pred,y)
+            y_pred=torch.argmax(y_pred,dim=1)
+            test_correct+=(y_pred.cpu().numpy()==y.cpu().numpy()).sum().item()
+            test_total+=y.size(0)
+            test_loss+=loss.data.item()
+    epoch_test_correct=test_correct / test_total
+    epoch_test_loss=test_loss / len(test_ld.dataset)
+    print('epoch:%d,loss:%.3f,acc:%.3f,test_loss:%.3f,test_acc:%.3f'%(
+        epoch+1,epoch_train_loss,epoch_train_correct,epoch_test_loss,epoch_test_correct
+    ))
+
+    return epoch_train_correct,epoch_train_loss,epoch_test_correct,epoch_test_loss
+
+epochs=10
+train_loss=[]
+test_loss=[]
+train_acc=[]
+test_acc=[]
+start= time.time()
+for epoch in range(epochs):
+    epoch_train_correct, epoch_train_loss, epoch_test_correct, epoch_test_loss=fit(epoch,model,train_loader,test_loader)
+    train_acc.append(epoch_train_correct)
+    train_loss.append(epoch_train_loss)
+    test_acc.append(epoch_test_correct)
+    test_loss.append(epoch_test_loss)
+end = time.time()
+print('时间是：%5f'%(end-start))
+# plt.plot(range(1,epochs+1),train_loss,label='train_loss')
+# plt.plot(range(1,epochs+1),test_loss,label='test_loss')
+# plt.legend()
+# plt.show()
+# plt.plot(range(1,epochs+1),train_acc,label='train_acc')
+# plt.plot(range(1,epochs+1),test_acc,label='test_acc')
+# plt.legend()
+# plt.show()
+
